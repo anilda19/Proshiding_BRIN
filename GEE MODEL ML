@@ -1,0 +1,113 @@
+# GEE MODEL ML
+
+Berikut adalah tautan GEE untuk pemodelan kelas tutupan lahan dengan machine learning
+https://code.earthengine.google.com/4748b6db84a509231d234f5c6526cc53?asset=projects%2Fklasifikasi-465307%2Fassets%2Fprosiding_klasifikasi
+
+// 1. Load geometry dan image
+var geometry = ee.FeatureCollection('projects/klasifikasi-465307/assets/klasifikasi_spektral_s2');
+var image = ee.Image('projects/klasifikasi-465307/assets/ROI_DATASET_V3_BAND_STATISTIK_2024')
+  .select(['B2','B3','B4','B5','B6','B7','B8','B11','B12','NDVI_STD','NDWI_STD','BSI_STD']);
+
+// 2. Sampling
+var samples = image.sampleRegions({
+  collection: geometry,
+  properties: ['LULC'],
+  scale: 10,
+  geometries: false
+});
+var withRandom = samples.randomColumn('random');
+var train = withRandom.filter(ee.Filter.lt('random', 0.7));
+var test = withRandom.filter(ee.Filter.gte('random', 0.7));
+var bands = ['B2','B3','B4','B5','B6','B7','B8','B11','B12','NDVI_STD','NDWI_STD','BSI_STD'];
+var label = 'LULC';
+
+// 3. Train classifiers
+var rf = ee.Classifier.smileRandomForest(100).train({
+  features: train, classProperty: label, inputProperties: bands
+});
+var svm = ee.Classifier.libsvm().train({
+  features: train, classProperty: label, inputProperties: bands
+});
+var xgb = ee.Classifier.smileGradientTreeBoost(100).train({
+  features: train, classProperty: label, inputProperties: bands
+});
+
+// 4. Klasifikasi citra
+var rfClass = image.classify(rf);
+var svmClass = image.classify(svm);
+var xgbClass = image.classify(xgb);
+
+// 5. Definisikan label dan warna legendanya
+var LULC_names = [
+  'Badan Air',        // 0
+  'Pemukiman',        // 1
+  'Sawah',            // 2
+  'Kebun Campuran',   // 3
+  'Hutan',           // 4
+  'Tambak',         // 5
+];
+var LULC_palette = [
+  '3399FF', // 0 Badan Air
+  'F0E68C', // 1 Pemukiman
+  '9ACD32', // 2 Sawah
+  'E2752A', // 3 Kebun Campuran
+  '228B22', // 4 Hutan
+  '008B8B', // 5 Tambak 
+];
+
+// 6. Visualisasi hasil klasifikasi
+Map.centerObject(geometry, 12);
+Map.addLayer(rfClass, {min: 0, max: 5, palette: LULC_palette}, 'Random Forest');
+Map.addLayer(svmClass, {min: 0, max: 5, palette: LULC_palette}, 'SVM');
+Map.addLayer(xgbClass, {min: 0, max: 5, palette: LULC_palette}, 'XGBoost');
+
+// 7. Fungsi untuk menampilkan legenda
+function addLegend(names, palette) {
+  var legend = ui.Panel({style: {position: 'bottom-left', padding: '8px 15px'}});
+  legend.add(ui.Label('Legenda LULC'));
+  for (var i = 0; i < names.length; i++) {
+    var colorBox = ui.Label('', {backgroundColor: '#' + palette[i], padding: '8px', margin: '0 0 4px 0'});
+    var description = ui.Label(names[i], {margin: '0 0 4px 6px'});
+    legend.add(ui.Panel([colorBox, description], ui.Panel.Layout.Flow('horizontal')));
+  }
+  Map.add(legend);
+}
+addLegend(LULC_names, LULC_palette);
+
+// 8. Evaluasi akurasi
+function printMetrics(classifier, test, name) {
+  var classified = test.classify(classifier);
+  var cm = classified.errorMatrix(label, 'classification');
+  print(name + ' Confusion Matrix:', cm);
+  print(name + ' Overall Accuracy:', cm.accuracy());
+  print(name + ' Kappa:', cm.kappa());
+}
+printMetrics(rf, test, 'Random Forest');
+printMetrics(svm, test, 'SVM');
+printMetrics(xgb, test, 'XGBoost');
+
+// 9. Ekspor hasil klasifikasi ke asset
+Export.image.toAsset({
+  image: rfClass,
+  description: 'Export_RF_LULC',
+  assetId: 'projects/klasifikasi-465307/assets/hasil_rf',
+  region: geometry.geometry().bounds(),
+  scale: 10,
+  maxPixels: 1e13
+});
+Export.image.toAsset({
+  image: svmClass,
+  description: 'Export_SVM_LULC',
+  assetId: 'projects/klasifikasi-465307/assets/hasil_svm',
+  region: geometry.geometry().bounds(),
+  scale: 10,
+  maxPixels: 1e13
+});
+Export.image.toAsset({
+  image: xgbClass,
+  description: 'Export_XGB_LULC',
+  assetId: 'projects/klasifikasi-465307/assets/hasil_xgb',
+  region: geometry.geometry().bounds(),
+  scale: 10,
+  maxPixels: 1e13
+});
