@@ -1,0 +1,205 @@
+# GEE Klasifikasi
+
+Berikut adalah tautan GEE untuk membuat klasifikasi tutupan lahan
+https://code.earthengine.google.com/0878211073c0cf8007fcfa761e9b03ea
+                           
+//RGB images 
+Map.centerObject(roi,11);
+Map.addLayer(dataset, {min: 0.0,max: 0.3,bands: ['B4', 'B3', 'B2'], }, 'RGB');
+
+var newfc = badan_air.merge(pemukiman).merge(sawah).merge(bare).merge(tambak).merge(kebun)
+var valpnts = badan_air1.merge(pemukiman1).merge(sawah1).merge(bare1).merge(tambak1).merge(kebun1)
+
+//Palette for the classification
+var palette = [ 
+  '3399FF', // 0 Badan Air
+  'FFFF00', // 1 Pemukiman
+  '32CD32', // 2 Sawah
+  'E2752A', // 3 Kebun Campuran
+  '0E3252', // 4 Hutan
+  '08660A', // 5 Tambak   
+];  
+// name of the legend
+var names = ['Badan Air','Pemukiman','Sawah','Kebun Campuran','Tambak','Hutan'];
+
+// set position of panel
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+ 
+// Create legend title
+var legendTitle = ui.Label({
+  value: 'Legend',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+    }
+});
+
+// Add the title to the panel
+legend.add(legendTitle);
+ 
+// Creates and styles 1 row of the legend.
+var makeRow = function(color, name) {
+ 
+      // Create the label that is actually the colored box.
+      var colorBox = ui.Label({
+        style: {
+          backgroundColor: '#' + color,
+          // Use padding to give the box height and width.
+          padding: '8px',
+          margin: '0 0 4px 0'
+        }
+      });
+ 
+      // Create the label filled with the description text.
+      var description = ui.Label({
+        value: name,
+        style: {margin: '0 0 4px 6px'}
+      });
+ 
+      // return the panel
+      return ui.Panel({
+        widgets: [colorBox, description],
+        layout: ui.Panel.Layout.Flow('horizontal')
+      });
+};
+// Add color and and names
+for (var i = 0; i < 6; i++) {
+  legend.add(makeRow(palette[i], names[i]));
+  }  
+// add legend to map (alternatively you can also print the legend to the console)
+Map.add(legend);
+
+//1) ----Training data
+//Creation of the "newfc" feature collection using the pixels having a feature property called "LULC" 
+//To improve the information using a buffer with a fixed radius  ( radius = 10 m)
+var buffer = function(feature) {
+  return feature.buffer(10)};
+newfc = newfc.map(buffer)
+
+//2) ---- Define the classifier
+//if you want use RandomForest (classifier_alg= "RF") else use SVM (classifier_alg= "SVM")
+var classifier_alg="RF" 
+
+//If you decided to use the SVM algorithm it's mandatory the normalization of the input bands
+if(classifier_alg =="SVM"){
+    var image = ee.Image(dataset);
+    // calculate the min and max value of an image
+    var minMax = image.reduceRegion({
+        reducer: ee.Reducer.minMax(),
+        geometry: roi,
+        scale: 10,
+        //maxPixels: 20e10, //10e9
+        bestEffort: true
+    }); 
+
+    // use unit scale to normalize the pixel values
+    var dataset = ee.ImageCollection.fromImages(
+      image.bandNames().map(function(name){
+          name = ee.String(name);
+          var band = image.select(name);
+          return band.unitScale(ee.Number(minMax.get(name.cat('_min'))), ee.Number(minMax.get(name.cat('_max'))))
+      })).toBands().rename(image.bandNames());
+  }
+  
+//3) ----- Define the superpixel seed location spacing, in pixels: (5 - 10 - 15 - 20)
+var size_segmentation = 15
+
+//----- Define the GLCM indices used in input for the PCA
+var glcm_bands= ["gray_asm","gray_contrast","gray_corr","gray_ent","gray_var","gray_idm","gray_savg"]
+
+//-----Pixel-based Approach
+
+//Selecting desired bands
+var bands= dataset.bandNames()
+
+// Get the predictors into the table and create a training dataset based on "LULC" property
+var training = dataset.select(bands).sampleRegions({
+  collection: newfc,
+  properties: ['LULC'],
+  scale: 10
+});
+
+//Training a Random Forest Classifier
+if(classifier_alg=="RF"){
+  var classifier =  ee.Classifier.smileRandomForest(50).train({
+    features: training,
+    classProperty: 'LULC',
+    inputProperties: bands
+  }); 
+}
+
+else if (classifier_alg=="SVM") {
+var classifi = ee.Classifier.libsvm({
+  kernelType: 'RBF',
+  gamma: 1,
+  cost: 10
+  });
+  var classifier = classifi.train(training, 'LULC', bands);
+}
+
+else{
+  print("You need to set your classifier for the Pixel Based approach")
+}
+
+//Clip and filter the result of pixel' classification 
+var classified = dataset.select(bands).classify(classifier).clip(roi).focal_mode();
+//Visualize the result
+Map.addLayer(classified, {min: 0, max: 6, palette: palette}, 'LULC PIXEL APPROACH', false);
+
+//Create the confusion matrix and calculate the overall accuracy on the training data
+//print('RF error matrix_training: ', classifier.confusionMatrix());
+//print('RF accuracy_training: ', classifier.confusionMatrix().accuracy());
+
+//
+//validasi
+//
+
+//Print the number of pixels for each class 
+var analysis_image = classified.select("classification")
+
+var class_1 =  analysis_image.updateMask(analysis_image.eq(0))
+var class_2 =  analysis_image.updateMask(analysis_image.eq(1))
+var class_3 =  analysis_image.updateMask(analysis_image.eq(2))
+var class_4 =  analysis_image.updateMask(analysis_image.eq(3))
+var class_5 =  analysis_image.updateMask(analysis_image.eq(4))
+var class_6 =  analysis_image.updateMask(analysis_image.eq(5))
+
+var all = class_1.addBands(class_2).addBands(class_3).addBands(class_4).addBands(class_5).addBands(class_6)
+
+var count_pixels_one = all.reduceRegion({
+  reducer: ee.Reducer.count(),
+  geometry: roi,
+  scale:10,
+  //maxPixels: 20e10, //1e11
+  bestEffort: true
+  })
+print(count_pixels_one, "PIXEL APPROACH: pixels for each class")
+
+//Create the confusion matrix and calculate the overall accuracy on the training data
+//print('RF error matrix_training: ', classifier.confusionMatrix());
+//print('RF accuracy_training: ', classifier.confusionMatrix().accuracy());
+
+//Validation of the pixel-based approach
+var classifierTest = dataset.select(bands).sampleRegions({
+  collection: valpnts,
+  properties: ['LULC'],
+  scale: 10
+});
+var classified_test_RF = classifierTest.classify(classifier);
+var testAccuracy = classified_test_RF.errorMatrix('LULC', 'classification');
+//print('Pixel approach_Test confusion matrix: ', testAccuracy);  
+print('PIXEL APPROACH : Overall Accuracy ', testAccuracy.accuracy());
+
+Export.table.toDrive({
+  collection: newfc,
+  description:'geometry',
+  fileFormat: 'KML'
+});
+
