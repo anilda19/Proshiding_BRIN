@@ -1,0 +1,99 @@
+# GEE DATASET
+
+Berikut adalah tautan GEE untuk membuat dataset
+https://code.earthengine.google.com/3b98562e1a3ffc22cedd6c950c25d968?asset=projects%2Fklasifikasi-465307%2Fassets%2Fprosiding
+
+// ===============================
+// 1. Definisikan Area of Interest (AOI) menggunakan aset Anda
+// ===============================
+var indramayu = ee.FeatureCollection('projects/ee-wawanhnbrin/assets/batasKecIndramayu');
+var roi = indramayu.geometry();
+
+// ===============================
+// 2. Muat Image Collection
+// ===============================
+var collection = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+  .filterBounds(roi)
+  .filterDate('2023-01-01', '2023-12-31')
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));
+
+// ===============================
+// 3. Pilih band dasar
+// ===============================
+var bands = ['B2','B3','B4','B5','B6','B7','B8','B11','B12'];
+
+// ===============================
+// 4. Fungsi untuk hitung indeks
+// ===============================
+function addIndices(img) {
+  var ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var ndwi = img.normalizedDifference(['B3', 'B8']).rename('NDWI');
+  var bsi = img.expression(
+    '((SWIR + RED) - (NIR + BLUE)) / ((SWIR + RED) + (NIR + BLUE))',
+    {
+      SWIR: img.select('B11'),
+      RED: img.select('B4'),
+      NIR: img.select('B8'),
+      BLUE: img.select('B2')
+    }).rename('BSI');
+    
+  return img.addBands([ndvi, ndwi, bsi]);
+}
+
+// Tambahkan indeks ke koleksi
+var collectionWithIndices = collection.map(addIndices);
+
+// ===============================
+// 5. Hitung standar deviasi antar waktu
+// ===============================
+var ndvi_std = collectionWithIndices.select('NDVI').reduce(ee.Reducer.stdDev()).rename('NDVI_STD');
+var ndwi_std = collectionWithIndices.select('NDWI').reduce(ee.Reducer.stdDev()).rename('NDWI_STD');
+var bsi_std = collectionWithIndices.select('BSI').reduce(ee.Reducer.stdDev()).rename('BSI_STD');
+
+// ===============================
+// 6. Ambil median dari koleksi (Hanya band dasar yang dipilih)
+// ===============================
+var median = collectionWithIndices.median().select(bands);
+
+// ===============================
+// 7. Gabungkan semua ke satu image dan potong (clip)
+// ===============================
+var finalImage = median.addBands([ndvi_std, ndwi_std, bsi_std]);
+var clippedImage = finalImage.clip(indramayu);
+
+// ===============================
+// 8. Cek hasil band
+// ===============================
+print("Final Image Bands:", clippedImage.bandNames());
+
+// ===============================
+// 9. Visualisasi NDVI_STD (opsional)
+// ===============================
+Map.centerObject(indramayu, 10);
+Map.addLayer(clippedImage.select('NDVI_STD'),
+  {min: 0, max: 0.2, palette: ['blue', 'white', 'red']},
+  'NDVI_STD (Clipped to Indramayu)');
+
+Map.centerObject(indramayu, 10);
+Map.addLayer(clippedImage.select('BSI_STD'),
+  {min: 0, max: 0.2, palette: ['blue', 'white', 'red']},
+  'BSI_STD (Clipped to Indramayu)');
+
+Map.centerObject(indramayu, 10);
+Map.addLayer(clippedImage.select('NDVI_STD'),
+  {min: 0, max: 0.2, palette: ['blue', 'white', 'red']},
+  'NDWI_STD (Clipped to Indramayu)');
+
+// ===============================
+// 10. Export hasil
+// ===============================
+Export.image.toDrive({
+  image: clippedImage,
+  description: 'Indramayu_12Bands',
+  folder: 'GEE_Export',
+  fileNamePrefix: 'indramayu-12bands',
+  region: indramayu,
+  scale: 10,
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
