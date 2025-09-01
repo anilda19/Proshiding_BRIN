@@ -1,1 +1,7 @@
-# Proshiding_BRIN
+# Optimization of Machine Learning-Based Land Cover Classification  with Multifeature Sentinel-2A Datasets in Indramayu Regency using Google Earth Engine 
+
+Abstrak
+
+Kabupaten Indramayu, yang merupakan lumbung pangan nasional, menghadapi tantangan serius akibat konversi lahan yang dipicu oleh pembangunan, pertumbuhan penduduk, dan perubahan iklim. Untuk mendukung pengambilan kebijakan yang tepat, diperlukan analisis tutupan lahan yang akurat. Penelitian ini berfokus pada optimasi klasifikasi tutupan lahan dengan membandingkan tiga model machine learning—Random Forest (RF), Support Vector Machine (SVM), dan Extreme Gradient Boosting (XGBoost)—menggunakan data satelit Sentinel-2A. Penelitian ini mengimplementasikan tiga variasi dataset: V1 (seluruh band Sentinel-2A), V2 (fitur spektral terpilih), dan V3 (fitur spektral terpilih yang diperkaya dengan indeks NDVI, NDWI, dan BSI). Klasifikasi dilakukan pada enam kelas tutupan lahan: Sawah, Kolam, Pemukiman, Badan Air, Kebun Campuran, dan Hutan. Kami menggunakan total 8.463 sampel data dengan proporsi 70% untuk pelatihan dan 30% untuk pengujian, yang seluruhnya diproses di platform Google Earth Engine (GEE).Hasil penelitian menunjukkan bahwa Random Forest adalah model yang paling unggul dengan Overall Accuracy 87.26% dan nilai Kappa 83.61%. Performa ini melampaui XGBoost dengan akurasi 86.34% dan SVM (akurasi 74.07%). Hasil analisis  membuktikan bahwa kombinasi Random Forest dengan dataset yang kaya fitur termasuk indeks standar deviasi merupakan  pendekatan yang paling efektif dan efisien untuk pemetaan tutupan lahan yang presisi di Kabupaten Indramayu. 
+
+Kata kunci— Algoritma, Himpunan Data, Klasifikasi, Random forest, SVM, XG-Boost,  Pembelajaran Mesin  
